@@ -151,23 +151,18 @@ auto FileOperation::write_file(inode_id_t id, const std::vector<u8> &content)
           }
         }
 
-        //把每次循环新分配的block_id写到indirect_block指向的block中, little ending
         u64 block_id_tmp = block_id;
         for(int i = 0; i < 8; i++){
-          indirect_block[8 * (idx - inlined_blocks_num) + i] = (block_id_tmp %(1<<8));
-          block_id_tmp >>= 8;
+            indirect_block[8 * (idx - inlined_blocks_num) + i] = (block_id_tmp %(1<<8));
+            block_id_tmp >>= 8;
         }
+
       }
-
     }
-
   } else {
     // We need to free the extra blocks.
     for (usize idx = new_block_num; idx < old_block_num; ++idx) {
       if (inode_p->is_direct_block(idx)) {
-
-        // TODO: Free the direct extra block.
-        //UNIMPLEMENTED();
         auto block_id = inode_p->blocks[idx];
         auto deallocate_res = this->block_allocator_->deallocate(block_id);
         if(deallocate_res.is_err()){
@@ -180,7 +175,7 @@ auto FileOperation::write_file(inode_id_t id, const std::vector<u8> &content)
 
         // TODO: Free the indirect extra block.
         //UNIMPLEMENTED();
-        //现有文件的大小大于一个inode可以直接容纳的文件的大小，需要用到扩展的inode
+
         if(!indirect_block_flag){
           indirect_block_flag = true;
           auto indirect_block_id = inode_p->get_indirect_block_id();
@@ -190,7 +185,7 @@ auto FileOperation::write_file(inode_id_t id, const std::vector<u8> &content)
             goto err_ret;
           }
         }
-        
+
         u64 block_id_tmp = 0;
         for(int i = 0; i < 8; i++){
           block_id_tmp <<= 8;
@@ -237,8 +232,8 @@ auto FileOperation::write_file(inode_id_t id, const std::vector<u8> &content)
                     : (content.size() - write_sz);
       std::vector<u8> buffer(block_size);
       memcpy(buffer.data(), content.data() + write_sz, sz);
-
-      block_id_t block_id = 0;
+ 
+      block_id_t block_id;
       if (inode_p->is_direct_block(block_idx)) {
 
         // TODO: Implement getting block id of current direct block.
@@ -260,12 +255,11 @@ auto FileOperation::write_file(inode_id_t id, const std::vector<u8> &content)
         }
 
         u64 block_id_tmp = 0;
-        for(int i = 0; i < 8; ++i){
+        for(int i = 0; i < 8; i++){
           block_id_tmp <<= 8;
           block_id_tmp += indirect_block[8 * (block_idx - inlined_blocks_num) + (7-i)];
         }
         block_id = block_id_tmp;
-      
       }
 
       // TODO: Write to current block.
@@ -286,7 +280,7 @@ auto FileOperation::write_file(inode_id_t id, const std::vector<u8> &content)
       error_code = write_res.unwrap_error();
       goto err_ret;
     }
-    if (indirect_block.size() != 0) {
+    if (indirect_block_flag) {
       write_res =
           inode_p->write_indirect_block(this->block_manager_, indirect_block);
       if (write_res.is_err()) {
