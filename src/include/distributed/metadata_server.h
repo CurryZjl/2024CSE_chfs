@@ -245,6 +245,13 @@ private:
   /**
    * {You can add anything you want here}
    */
+  std::map<inode_id_t, std::mutex> inode_mtx;
+  std::map<inode_id_t, std::mutex> lookup_mtx;
+  std::map<mac_id_t, std::mutex> mac_mtx;
+  std::mutex im_mtx;
+  std::mutex fs_mtx;
+  std::mutex logging_mtx;
+
 };
 
 } // namespace chfs

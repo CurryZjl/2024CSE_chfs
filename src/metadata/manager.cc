@@ -122,17 +122,17 @@ auto InodeManager::set_table(inode_id_t idx, block_id_t bid) -> ChfsNullResult {
   // whose index is `idx`.
   //UNIMPLEMENTED();
   auto inode_per_block = bm->block_size() / sizeof(block_id_t);
-  auto inode_block_id = RAW_2_LOGIC(idx / inode_per_block);
-  auto inode_offet = idx % inode_per_block;
+  auto iblock_id = 1 + idx / inode_per_block;
+  auto iblock_offset = idx % inode_per_block;
 
-  std::vector<u8> buffer(bm->block_size());
-  auto res = bm->read_block(inode_block_id, buffer.data());
+  auto buffer = std::vector<u8>(bm->block_size(), 0);
+  auto res = bm->read_block(iblock_id, buffer.data());
   if (res.is_err()) {
     return ChfsNullResult(res.unwrap_error());
   }
   auto table_entry = reinterpret_cast<block_id_t *>(buffer.data());
-  table_entry[inode_offet] = bid;
-  res = bm->write_block(inode_block_id, buffer.data());
+  table_entry[iblock_offset] = bid;
+  res = bm->write_block(iblock_id, buffer.data());
   if (res.is_err()) {
     return ChfsNullResult(res.unwrap_error());
   }
@@ -151,15 +151,15 @@ auto InodeManager::get(inode_id_t id) -> ChfsResult<block_id_t> {
   // table index.
   //UNIMPLEMENTED();
   auto inode_per_block = bm->block_size() / sizeof(block_id_t);
-  auto inode_block_id = 1 + LOGIC_2_RAW(id) / inode_per_block;
-  auto inode_offet = LOGIC_2_RAW(id) % inode_per_block;
-  std::vector<u8> buffer(bm->block_size());
-  auto res = bm->read_block(inode_block_id, buffer.data());
+  auto iblock_id = 1 + LOGIC_2_RAW(id) / inode_per_block;
+  auto iblock_offset = LOGIC_2_RAW(id) % inode_per_block;
+  auto buffer = std::vector<u8>(bm->block_size(), 0);
+  auto res = bm->read_block(iblock_id, buffer.data());
   if (res.is_err()) {
     return ChfsResult<block_id_t>(res.unwrap_error());
   }
   auto table_entry = reinterpret_cast<block_id_t *>(buffer.data());
-  res_block_id = table_entry[inode_offet];
+  res_block_id = table_entry[iblock_offset];
   return ChfsResult<block_id_t>(res_block_id);
 }
 
@@ -256,34 +256,35 @@ auto InodeManager::free_inode(inode_id_t id) -> ChfsNullResult {
   // 2. Clear the inode bitmap.
   //UNIMPLEMENTED();
   auto inode_per_block = bm->block_size() / sizeof(block_id_t);
-  auto inode_block_id = 1 + LOGIC_2_RAW(id) / inode_per_block;
-  auto inode_offet = LOGIC_2_RAW(id) % inode_per_block;
-  std::vector<u8> buffer(bm->block_size());
-  auto res = bm->read_block(inode_block_id, buffer.data());
+  auto iblock_id = 1 + LOGIC_2_RAW(id)/inode_per_block;
+  auto iblock_offset = LOGIC_2_RAW(id)%inode_per_block;
+
+  auto buffer = std::vector<u8>(bm->block_size(), 0);
+  auto res = bm->read_block(iblock_id, buffer.data());
   if (res.is_err()) {
     return ChfsNullResult(res.unwrap_error());
   }
   auto table_entry = reinterpret_cast<block_id_t *>(buffer.data());
-  table_entry[inode_offet] = KInvalidBlockID;
-  res = bm->write_block(inode_block_id, buffer.data());
+  table_entry[iblock_offset] = KInvalidBlockID;
+  res = bm->write_block(iblock_id, buffer.data());
   if (res.is_err()) {
     return ChfsNullResult(res.unwrap_error());
   }
 
-  auto inode_bits_per_block = bm->block_size() * KBitsPerByte;
-  auto inodebit_block_id = 1 + LOGIC_2_RAW(id) / inode_bits_per_block;
-  res = bm->read_block(inodebit_block_id, buffer.data());
+  auto inode_bits_per_block=bm->block_size() * KBitsPerByte;
+  auto ibit_block_id = 1 + n_table_blocks + LOGIC_2_RAW(id) / inode_bits_per_block;
+  res = bm->read_block(ibit_block_id, buffer.data());
   if (res.is_err()) {
     return ChfsNullResult(res.unwrap_error());
   }
 
   auto bitmap = Bitmap(buffer.data(), bm->block_size());
   bitmap.clear(LOGIC_2_RAW(id) % (inode_bits_per_block));
-  res = bm->write_block(inodebit_block_id, buffer.data());
+
+  res = bm->write_block(ibit_block_id, buffer.data());
   if (res.is_err()) {
     return ChfsNullResult(res.unwrap_error());
   }
-
   return KNullOk;
 }
 
