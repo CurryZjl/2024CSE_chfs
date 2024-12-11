@@ -116,46 +116,39 @@ auto CommitLog::checkpoint() -> void {
 auto CommitLog::recover() -> void {
   // TODO: Implement this function.
   //UNIMPLEMENTED();
-  try{
-    logsystem_lock.lock();
+  logsystem_lock.lock();
 
-    recover_operations.clear();
-    //read the superblock
-    std::vector<u8> buffer(DiskBlockSize);
-    block_id_t LogSuperBlockId = this->bm_->total_blocks();
-    this->bm_->read_block(LogSuperBlockId, buffer.data());
+  recover_operations.clear();
+  //read the superblock
+  std::vector<u8> buffer(DiskBlockSize);
+  block_id_t LogSuperBlockId = this->bm_->total_blocks();
+  this->bm_->read_block(LogSuperBlockId, buffer.data());
 
-    //get the max_txn_id
-    block_id_t cur_txn_id = 0;
-    while(1)
-    {
-      block_id_t start_offset = BitmapBytes + cur_txn_id * BytesPerTxEntry;
-      if(start_offset + 2 >= DiskBlockSize){
-        break;
-      }
-      block_id_t log_block_id = 0U;
-      usize log_count = 0U;
-      log_block_id = buffer[start_offset + 0];
-      log_block_id *= 256;
-      log_block_id += buffer[start_offset + 1];
-      log_count = buffer[start_offset + 2];
-      if(!log_block_id)
-        break;
-      cur_txn_id++;
-      usize hasCommmit = buffer[start_offset + 2];
-      if(!hasCommmit){
-        recover_operations.push_back(get_operation(log_block_id));
-        continue;
-      }
-      recover_tx(cur_txn_id-1, log_block_id, log_count);
+  block_id_t cur_txn_id = 0;
+  while(1)
+  {
+    block_id_t start_offset = BitmapBytes + cur_txn_id * BytesPerTxEntry;
+    if(start_offset + 2 >= DiskBlockSize){
+      break;
     }
-    max_txn_id = cur_txn_id;
-
-    logsystem_lock.unlock();
+    block_id_t log_block_id = 0U;
+    usize log_count = 0U;
+    log_block_id = buffer[start_offset];
+    log_block_id *= 256;
+    log_block_id += buffer[start_offset + 1];
+    log_count = buffer[start_offset + 2];
+    if(!log_block_id)
+      break;
+    cur_txn_id++;
+    usize hasCommmit = buffer[start_offset + 2];
+    if(!hasCommmit){
+      recover_operations.push_back(get_operation(log_block_id));
+      continue;
+    }
+    recover_tx(cur_txn_id-1, log_block_id, log_count);
   }
-  catch(std::exception &e){
-    std::cout << e.what()  << std::endl;
-  }
+  max_txn_id = cur_txn_id; //全局记录一个最高的事务id
+  logsystem_lock.unlock();
 }
 
 auto CommitLog::FAAjob(int val) -> void {
@@ -287,12 +280,16 @@ auto CommitLog::alloc_log(txn_id_t txn_id, usize log_cnt) -> std::tuple<block_id
 }
 
 auto CommitLog::recover_tx(txn_id_t txn_id, block_id_t txn_block_id, usize log_cnt) -> void {
-  std::vector<u8>buffer (DiskBlockSize);
+  std::vector<u8> buffer (DiskBlockSize);
   this->bm_->read_block(txn_block_id + this->bm_->total_blocks(), buffer.data());
   for(int i = 0; i < log_cnt; i++)
   {
     block_id_t log_offset = i * BytesPerLogEntry;
     block_id_t op_block_id = 0, log_block_id = 0;
+    if(log_offset + 9 < DiskBlockSize){
+      std::cout << "index too large" << std::endl;
+      return;
+    }
 
     for(int i = 7; i >= 0; i--)
     {
@@ -357,6 +354,8 @@ auto CommitLog::get_operation(block_id_t txn_block_id) -> ServerOperation{
   {
     name_ += buffer[cur_byte_pos];
     cur_byte_pos++;
+    if(cur_byte_pos >= DiskBlockSize)
+      break;
   }
 
   return ServerOperation(type_, parent_, name_);
