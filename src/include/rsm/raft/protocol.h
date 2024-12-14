@@ -19,30 +19,70 @@ const std::string RAFT_RPC_INSTALL_SNAPSHOT = "install snapshot";
 
 struct RequestVoteArgs {
     /* Lab3: Your code here */
+    int candidateId; //candidate requesting vote
+    int term; //candidate's term
+    int lastLogIndex; //index of candidate's last log entry
+    int lastLogTerm; //term of candidate's last log entry
     
     MSGPACK_DEFINE(
-    
+        candidateId,
+        term,
+        lastLogIndex,
+        lastLogTerm
     )
 };
 
 struct RequestVoteReply {
     /* Lab3: Your code here */
-
-    MSGPACK_DEFINE(
+    int term; //currentTerm, for candidate's last log entry
+    bool voteGranted; //true means candidate received vote
     
+    MSGPACK_DEFINE(
+        term,
+        voteGranted
     )
 };
 
 template <typename Command>
 struct AppendEntriesArgs {
     /* Lab3: Your code here */
+    int term; //leader’s term
+    int leaderId; //so follower can redirect client
+    int prevLogIndex; //index of log entry immediately preceding new ones
+    int prevLogTerm; //term of prevLogIndex entry
+   // std::vector<RaftLogEntry<Command>> entries;
+    int leaderCommit; //leader’s commitIndex
+
+     MSGPACK_DEFINE(
+        term,
+        leaderId,
+        prevLogIndex,
+        prevLogTerm,
+
+        leaderCommit
+    )
 };
 
 struct RpcAppendEntriesArgs {
     /* Lab3: Your code here */
+    int term; //leader’s term
+    int leaderId; //so follower can redirect client
+    int prevLogIndex; //index of log entry immediately preceding new ones
+    int prevLogTerm; //term of prevLogIndex entry
+    std::vector<std::vector<u8>> cmds;
+    std::vector<int> indexs;
+    std::vector<int> terms;
+    int leaderCommit; //leader’s commitIndex
 
     MSGPACK_DEFINE(
-    
+        term,
+        leaderId,
+        prevLogIndex,
+        prevLogTerm,
+        cmds,
+        indexs,
+        terms,
+        leaderCommit
     )
 };
 
@@ -62,9 +102,13 @@ AppendEntriesArgs<Command> transform_rpc_append_entries_args(const RpcAppendEntr
 
 struct AppendEntriesReply {
     /* Lab3: Your code here */
+    int term; //currentTerm, for leader to update itself
+    bool success; //true if follower contained entry matching prevLogIndex and prevLogTerm
+
 
     MSGPACK_DEFINE(
-    
+        term,
+        success
     )
 };
 
