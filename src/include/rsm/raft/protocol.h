@@ -43,6 +43,18 @@ struct RequestVoteReply {
     )
 };
 
+//自定义logEntry的结构
+template<typename Command>
+class RaftLogEntry {
+public:
+    int index;
+    int term;
+    Command cmd;
+
+    RaftLogEntry(int index = 0, int term = 0) : index(index), term(term) {}
+    RaftLogEntry(int index, int term, Command cmd) : index(index), term(term), cmd(cmd) {}
+};
+
 template <typename Command>
 struct AppendEntriesArgs {
     /* Lab3: Your code here */
@@ -50,7 +62,7 @@ struct AppendEntriesArgs {
     int leaderId; //so follower can redirect client
     int prevLogIndex; //index of log entry immediately preceding new ones
     int prevLogTerm; //term of prevLogIndex entry
-   // std::vector<RaftLogEntry<Command>> entries;
+    std::vector<RaftLogEntry<Command>> entries; //log entries to store (empty for heartbeat; may send more than one for efficiency)
     int leaderCommit; //leader’s commitIndex
 
      MSGPACK_DEFINE(
@@ -58,7 +70,7 @@ struct AppendEntriesArgs {
         leaderId,
         prevLogIndex,
         prevLogTerm,
-
+        entries,
         leaderCommit
     )
 };
@@ -90,14 +102,42 @@ template <typename Command>
 RpcAppendEntriesArgs transform_append_entries_args(const AppendEntriesArgs<Command> &arg)
 {
     /* Lab3: Your code here */
-    return RpcAppendEntriesArgs();
+    RpcAppendEntriesArgs rpc_arg;
+    rpc_arg.term = arg.term;
+    rpc_arg.leaderId = arg.leaderId;
+    rpc_arg.prevLogIndex = arg.prevLogIndex;
+    rpc_arg.prevLogTerm = arg.prevLogTerm;
+    rpc_arg.leaderCommit = arg.leaderCommit;
+    size_t size = arg.entries.size();
+    for(int i = 0; i < size; i++){
+        rpc_arg.indexs.push_back(arg.entries[i].index);
+        rpc_arg.terms.push_back(arg.entries[i].term);
+        rpc_arg.cmds.push_back(arg.entries[i].cmd.serialize(arg.entries[i].cmd.size()));
+    }
+
+    return rpc_arg;
+    //return RpcAppendEntriesArgs();
 }
 
 template <typename Command>
 AppendEntriesArgs<Command> transform_rpc_append_entries_args(const RpcAppendEntriesArgs &rpc_arg)
 {
     /* Lab3: Your code here */
-    return AppendEntriesArgs<Command>();
+    //return AppendEntriesArgs<Command>();
+     AppendEntriesArgs<Command> arg;
+    arg.term = rpc_arg.term;
+    arg.leaderId = rpc_arg.leaderId;
+    arg.prevLogIndex = rpc_arg.prevLogIndex;
+    arg.prevLogTerm = rpc_arg.prevLogTerm;
+    arg.leaderCommit = rpc_arg.leaderCommit;
+    arg.entries.clear();
+    size_t size = rpc_arg.cmds.size();
+    for(int i = 0; i < size; i++){
+        arg.entries.push_back(RaftLogEntry<Command>(rpc_arg.indexs[i], rpc_arg.terms[i], Command()));
+        arg.entries[i].cmd.deserialize(rpc_arg.cmds[i],rpc_arg.cmds[i].size());
+    }
+
+    return arg;
 }
 
 struct AppendEntriesReply {
@@ -114,17 +154,27 @@ struct AppendEntriesReply {
 
 struct InstallSnapshotArgs {
     /* Lab3: Your code here */
+    int term; //leader's term
+    int leaderId;
+    int lastIncludedIndex; //the snapshot replaces all entries up through and including this index
+    int lastIncludedTerm; //term of lastIncludedIndex
+    std::vector<uint_least8_t> snapshot;
 
     MSGPACK_DEFINE(
-    
+        term,
+        leaderId,
+        lastIncludedIndex,
+        lastIncludedTerm,
+        snapshot
     )
 };
 
 struct InstallSnapshotReply {
     /* Lab3: Your code here */
+    int term; //currentTerm, for leader to update itself
 
     MSGPACK_DEFINE(
-    
+        term
     )
 };
 
