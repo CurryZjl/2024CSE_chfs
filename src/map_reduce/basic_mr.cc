@@ -18,8 +18,23 @@ namespace mapReduce{
         // Your code goes here
         // Hints: split contents into an array of words.
         std::vector<KeyVal> ret;
+        size_t size = content.length();
+        std::string cur = "";
+        for(size_t i = 0; i < size; i++){
+            char cr = content[i];
+            if((cr >= 'a' && cr <= 'z') || (cr >= 'A' && cr <= 'Z')){
+                cur.append(1, cr);
+            } else {
+                if(cur != ""){
+                    ret.push_back(KeyVal(cur, "1"));
+                } else {
+                    cur = "";
+                }
+            }
+        }
+        if(cur != "")
+            ret.push_back(KeyVal(cur, "1"));
         return ret;
-
     }
 
 //
@@ -31,6 +46,10 @@ namespace mapReduce{
         // Your code goes here
         // Hints: return the number of occurrences of the word.
         std::string ret = "0";
-        return ret;
+        int count = 0;
+        for (const std::string &value : values){
+            count += std::stoi(value);
+        }
+        return std::to_string(count);
     }
 }
