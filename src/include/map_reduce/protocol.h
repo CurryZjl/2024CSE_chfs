@@ -14,6 +14,13 @@ namespace mapReduce {
         KeyVal(){}
         std::string key;
         std::string val;
+
+        bool operator <(const KeyVal &kv2) const{
+            return key < kv2.key;
+        }
+        bool operator ==(const KeyVal &kv2) const{
+            return key == kv2.key;
+        }
     };
 
     enum mr_tasktype {
@@ -51,10 +58,44 @@ namespace mapReduce {
         std::string outPutFile;
     };
 
+    class Task{
+    public:
+        mr_tasktype taskType;
+        std::vector<std::string> files;
+        std::string outputFile;
+
+        std::chrono::_V2::system_clock::time_point startTime;
+        bool finished = false;
+        bool hasAligned = false;
+
+        Task(){}
+        Task(mr_tasktype taskt):taskType(taskt){}
+    };
+
+    enum askRes{
+        NoTask, 
+        MapTask, 
+        ReduceTask, 
+        Busy
+    };
+
+    struct AskTaskReply {
+        int index;
+        int res;
+        std::string outputFile;
+        std::vector<std::string> files;
+        MSGPACK_DEFINE(
+            index,
+            res,
+            outputFile,
+            files
+        )
+    };
+
     class Coordinator {
     public:
         Coordinator(MR_CoordinatorConfig config, const std::vector<std::string> &files, int nReduce);
-        std::tuple<int, int> askTask(int);
+        AskTaskReply askTask(int);
         int submitTask(int taskType, int index);
         bool Done();
 
@@ -63,6 +104,14 @@ namespace mapReduce {
         std::mutex mtx;
         bool isFinished;
         std::unique_ptr<chfs::RpcServer> rpc_server;
+
+        std::vector<Task> MapTasks, ReduceTasks;
+        int mapFileCnt = 0, mapCompCnt = 0;
+        int reduceFileCnt = 0, reduceCompCnt = 0;
+        Task FinalTask = Task(REDUCE);
+
+        int workStage = 0;
+        std::chrono::_V2::system_clock::duration threhold = std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::milliseconds(1000));
     };
 
     class Worker {
@@ -81,5 +130,10 @@ namespace mapReduce {
         std::shared_ptr<chfs::ChfsClient> chfs_client;
         std::unique_ptr<std::thread> work_thread;
         bool shouldStop = false;
+
+        std::vector<std::string>reduceFiles;
+        Task task;
+
+        std::vector<KeyVal> readFile(std::string filename);
     };
 }
