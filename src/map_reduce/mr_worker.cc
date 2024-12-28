@@ -141,7 +141,7 @@ namespace mapReduce {
             // Lab4: Your code goes here.
             auto reply = mr_client->call(ASK_TASK, 0);
             if(reply.is_err()){
-    			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    			std::this_thread::sleep_for(std::chrono::milliseconds(40));
                 continue;
             }
             auto content = reply.unwrap()->as<AskTaskReply>();
@@ -154,7 +154,7 @@ namespace mapReduce {
                 case NoTask:
                     break;
                 case Busy:
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(40));
                     break;
                 case MapTask:
                     doMap(content.index, task.files[0]);
