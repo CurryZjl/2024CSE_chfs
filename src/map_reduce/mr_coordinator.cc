@@ -11,54 +11,60 @@ namespace mapReduce {
     AskTaskReply Coordinator::askTask(int) {
         // Lab4 : Your code goes here.
         // Free to change the type of return value.
+        // if(verbose)printf("CORD:being asked.\n");
         AskTaskReply reply;
-        reply.index = 0;
-        reply.res = NoTask;
-        if(isFinished){
+        reply.index = 0, reply.res = NoTask;
+        if(isFinished)
+            return reply;
+        std::unique_lock<std::mutex> uniqueLock(mtx);
+        if(!workStage){
+            for(int i = 0; i < mapFileCnt; i++){
+                if(MapTasks[i].finished)continue;
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - MapTasks[i].startTime);
+        // if(verbose)printf("CORD:checking map %s.\n", MapTasks[i].files[0].c_str());
+                if(!MapTasks[i].hasAligned || duration >= threhold){
+                    if(verbose)printf("CORD:aligned map task %d/%d.\n",i, mapFileCnt);
+                    reply.res = MapTask;
+                    reply.outputFile = MapTasks[i].outputFile;
+                    reply.files = MapTasks[i].files;
+                    reply.index = i;
+                    MapTasks[i].startTime = std::chrono::high_resolution_clock::now();
+                    MapTasks[i].hasAligned = true;
+                    return reply;
+                }
+            }
+            reply.res = Busy;
             return reply;
         }
-
-        std::unique_lock<std::mutex> uniqueLock(mtx);
-        auto now = std::chrono::high_resolution_clock::now();
-
-        // 使用一个辅助函数来处理任务
-        auto processTasks = [&](auto& tasks, int stage) {
-            for (int i = 0; i < mapFileCnt; i++) {
-                if (tasks[i].finished) {
-                    continue;
-                }
-
-                auto taskTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - tasks[i].startTime);
-                if (!tasks[i].hasAligned || taskTime >= threhold) {
-                    reply.res = stage == 0 ? MapTask : ReduceTask;
-                    reply.index = stage == 0 ? i : -1;  // Map stage gives actual index; Reduce stage gives -1
-                    reply.outputFile = tasks[i].outputFile;
-                    reply.files = tasks[i].files;
-                    tasks[i].startTime = now; // 更新为当前时间
-                    tasks[i].hasAligned = true;
-                    return true; // 表示找到一个可用的任务
+        if(workStage == 1){
+                // if(verbose)printf("CORD:preparing reduce %d\n",reduceFileCnt);
+            for(int i = 0; i < reduceFileCnt; i++){
+                if(ReduceTasks[i].finished)continue;
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - ReduceTasks[i].startTime);
+                if(!ReduceTasks[i].hasAligned || duration >= threhold){
+                    if(verbose)printf("CORD:aligned reduce task %d/%d.\n",i, reduceFileCnt);
+                    reply.res = ReduceTask;
+                    reply.outputFile = ReduceTasks[i].outputFile;
+                    reply.files = ReduceTasks[i].files;
+                    reply.index = i;
+                    ReduceTasks[i].startTime = std::chrono::high_resolution_clock::now();
+                    ReduceTasks[i].hasAligned = true;
+                    return reply;
                 }
             }
-            return false; // 没有找到可用任务
-        };
-
-        if (workStage == 0) {
-            if (processTasks(MapTasks, 0)) {
-                return reply;
-            }
-        } else if (workStage == 1) {
-            if (processTasks(ReduceTasks, 1)) {
-                return reply;
-            }
+            reply.res = Busy;
+            return reply;
         }
-
-        now =  std::chrono::high_resolution_clock::now();
-        auto taskTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - FinalTask.startTime);
-        if(!FinalTask.hasAligned || taskTime >= threhold){
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - FinalTask.startTime);
+        if(!FinalTask.hasAligned || duration >= threhold){
+            if(verbose)printf("CORD:aligned Finaltask.\n");
             reply.res = ReduceTask;
-            reply.index = -1;
             reply.outputFile = FinalTask.outputFile;
             reply.files = FinalTask.files;
+            reply.index = -1;
             FinalTask.startTime = std::chrono::high_resolution_clock::now();
             FinalTask.hasAligned = true;
             return reply;
@@ -69,29 +75,27 @@ namespace mapReduce {
 
     int Coordinator::submitTask(int taskType, int index) {
         // Lab4 : Your code goes here.
-        if(isFinished)
-            return 0;
+        if(isFinished)return 0;
         std::unique_lock<std::mutex> uniqueLock(mtx);
         if(taskType == MAP){
-           
-            if(MapTasks[index].finished)
-                return 0;
+            if(verbose)printf("CORD:got submission map task %d.\n",index);
+            if(MapTasks[index].finished)return 0;
             MapTasks[index].finished = true;
-            mapCompCnt++;
-        
-            if(mapCompCnt == mapFileCnt)
-                workStage++;
+            mapCompCnt ++;
+            if(verbose)printf("CORD:finished map task %d/%d.\n",mapCompCnt, mapFileCnt);
+            if(mapCompCnt == mapFileCnt)workStage++;
         }
         else if(taskType == REDUCE){
+            if(verbose)printf("CORD:got submission map task %d.\n",index);
             if(index >= 0){
-                if(ReduceTasks[index].finished)
-                    return 0;
+                if(ReduceTasks[index].finished)return 0;
                 ReduceTasks[index].finished = true;
                 reduceCompCnt++;
-                if(reduceCompCnt == reduceFileCnt)
-                    workStage++;
+            if(verbose)printf("CORD:finished reduce task %d/%d.\n",reduceCompCnt, reduceFileCnt);
+                if(reduceCompCnt == reduceFileCnt)workStage++;
             }
             else{
+            if(verbose)printf("CORD:got submission final task\n");
                 FinalTask.finished = true;
                 isFinished = true;
             }
@@ -111,8 +115,8 @@ namespace mapReduce {
     Coordinator::Coordinator(MR_CoordinatorConfig config, const std::vector<std::string> &files, int nReduce) {
         this->files = files;
         this->isFinished = false;
-        // Lab4: Your code goes here (Optional).
         mapFileCnt = files.size();
+        // Lab4: Your code goes here (Optional).
     
         rpc_server = std::make_unique<chfs::RpcServer>(config.ip_address, config.port);
         rpc_server->bind(ASK_TASK, [this](int i) { return this->askTask(i); });
@@ -130,9 +134,9 @@ namespace mapReduce {
             Task task(REDUCE);
             task.files.push_back("map"+std::to_string(i));
             task.files.push_back("map"+std::to_string(i+1));
-            if(i + 2 == mapFileCnt - 1){
+            if(i+2 == mapFileCnt-1){
                 task.files.push_back("map"+std::to_string(i+2));
-                i += 3;
+                i+=3;
             }
             task.outputFile = "reduce"+std::to_string(i/2);
             ReduceTasks.push_back(task);

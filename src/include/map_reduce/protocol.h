@@ -14,7 +14,6 @@ namespace mapReduce {
         KeyVal(){}
         std::string key;
         std::string val;
-
         bool operator <(const KeyVal &kv2) const{
             return key < kv2.key;
         }
@@ -51,6 +50,7 @@ namespace mapReduce {
     public:
         SequentialMapReduce(std::shared_ptr<chfs::ChfsClient> client, const std::vector<std::string> &files, std::string resultFile);
         void doWork();
+        bool verbose = false;
 
     private:
         std::shared_ptr<chfs::ChfsClient> chfs_client;
@@ -61,7 +61,7 @@ namespace mapReduce {
     class Task{
     public:
         mr_tasktype taskType;
-        std::vector<std::string> files;
+        std::vector<std::string>files;
         std::string outputFile;
 
         std::chrono::_V2::system_clock::time_point startTime;
@@ -71,26 +71,19 @@ namespace mapReduce {
         Task(){}
         Task(mr_tasktype taskt):taskType(taskt){}
     };
-
     enum askRes{
-        NoTask, 
-        MapTask, 
-        ReduceTask, 
-        Busy
+        NoTask, MapTask, ReduceTask, Busy
     };
-
     struct AskTaskReply {
-        int index;
         int res;
+        int index;
         std::string outputFile;
-        std::vector<std::string> files;
+        std::vector<std::string>files;
         MSGPACK_DEFINE(
-            index,
-            res,
-            outputFile,
-            files
+            res,index,outputFile,files
         )
     };
+
 
     class Coordinator {
     public:
@@ -98,6 +91,7 @@ namespace mapReduce {
         AskTaskReply askTask(int);
         int submitTask(int taskType, int index);
         bool Done();
+        
 
     private:
         std::vector<std::string> files;
@@ -112,6 +106,8 @@ namespace mapReduce {
 
         int workStage = 0;
         std::chrono::_V2::system_clock::duration threhold = std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::milliseconds(1000));
+
+        bool verbose = false;
     };
 
     class Worker {
@@ -120,20 +116,24 @@ namespace mapReduce {
         void doWork();
         void stop();
 
-    private:
+    private:    
+        bool verbose = false;
+
         void doMap(int index, const std::string &filename);
         void doReduce(int index, int nfiles);
         void doSubmit(mr_tasktype taskType, int index);
+        std::vector<KeyVal> readFile(std::string filename);
+        void writeFile(std::string filename, std::vector<KeyVal>kvs);
+        std::string getContentFromFile(std::string filename);
 
         std::string outPutFile;
         std::unique_ptr<chfs::RpcClient> mr_client;
         std::shared_ptr<chfs::ChfsClient> chfs_client;
         std::unique_ptr<std::thread> work_thread;
-        bool shouldStop = false;
 
         std::vector<std::string>reduceFiles;
-        Task task;
+        bool shouldStop = false;
 
-        std::vector<KeyVal> readFile(std::string filename);
+        Task task;
     };
 }
