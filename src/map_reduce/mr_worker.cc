@@ -138,25 +138,65 @@ namespace mapReduce {
             // Lab4: Your code goes here.
             auto reply = mr_client->call(ASK_TASK, 0);
             if(reply.is_err()){
-    			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    			std::this_thread::sleep_for(std::chrono::milliseconds(40));
                 continue;
             }
             auto content = reply.unwrap()->as<AskTaskReply>();
             auto res = content.res;
             task.outputFile = content.outputFile;
             task.files = content.files;
-            if(res == NoTask)break;
-            if(res == Busy){
-    			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
+
+            switch (res)
+            {
+                case NoTask:
+                    break;
+                case Busy:
+                    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+                    break;
+                case MapTask:
+                    doMap(content.index, task.files[0]);
+                    break;
+                case ReduceTask:
+                    doReduce(content.index, task.files.size());
+                    break;
+                default:
+                    break;
             }
-            if(res == MapTask){
-                doMap(content.index, task.files[0]);
-                continue;
-            }
-            if(res == ReduceTask){
-                doReduce(content.index, task.files.size());
-                continue;
+        }
+    }
+
+    std::vector<KeyVal> Worker::readFile(std::string filename){
+        auto lookupRes = chfs_client->lookup(1, filename);
+        if(lookupRes.is_err()){
+            std::cerr << "error in lookup of" << filename << " detail:" << (int)lookupRes.unwrap_error() << std::endl;
+            return {};
+        }
+        auto inodeId = lookupRes.unwrap();
+        auto type = chfs_client->get_type_attr(inodeId);
+        if(type.is_err()){
+            std::cerr << "error in get_type_attr " << inodeId << " detail:" << (int)type.unwrap_error() << std::endl;
+            return {};
+        }
+        auto file_type = type.unwrap();
+        auto file_size = file_type.second.size;
+        auto readRes = chfs_client->read_file(inodeId, 0, file_size);
+        if(readRes.is_err()){
+            std::cerr << "error in read_file " << inodeId << " detail:" << (int)readRes.unwrap_error() << std::endl;
+        }
+        auto content_vec = readRes.unwrap();
+        std::ostringstream oss;
+        for(char c : content_vec){
+            oss << c;
+        }
+        std::string content = oss.str();
+        std::vector<KeyVal>ret;
+        std::string key,val;
+        for(char &c : content){
+            if(c =='\n' || c == '\0'){
+                if(!key.empty() && !val.empty())
+                    ret.emplace_back(key,val);
+                key.clear();
+                val.clear();
             }
 
         }

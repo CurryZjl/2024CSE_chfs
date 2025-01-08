@@ -18,12 +18,12 @@ namespace mapReduce {
         // if(verbose)printf("starting dowork\n");
         // Your code goes here
         std::vector<KeyVal> kvs;
-        std::vector<KeyVal> res_kvs;
-        for(const std::string &file : files){
-        // if(verbose)printf("trying to read file %s\n", file.c_str());
-            auto res_lookup = chfs_client->lookup(1, file);
-            if(res_lookup.is_err()){
-                std::cerr<<"ERROR IN DOWORK(LOOKUP) WITH FILE "<<file<<" , ERRORNO IS "<<(int)res_lookup.unwrap_error()<<std::endl;
+
+        //map
+        for(std::string file : files){
+            auto lookupRes = chfs_client->lookup(1, file);
+            if(lookupRes.is_err()){
+                std::cerr << "error in lookup of" << file << " detail:" << (int)lookupRes.unwrap_error() << std::endl;
             }
             auto inode_id = res_lookup.unwrap();
             auto type_res = chfs_client->get_type_attr(inode_id);
@@ -43,42 +43,51 @@ namespace mapReduce {
             kvs.insert(kvs.end(), mapres.begin(), mapres.end());
         }
 
-        // sort(kvs.begin(), kvs.end());
-        for(int i = 0;i < kvs.size(); i++){
-            for(int j = i+1; j < kvs.size(); j++){
-                if(kvs[j] < kvs [i])std::swap(kvs[i], kvs[j]);
+        //sort kvs
+        for(size_t i = 0; i < kvs.size(); i++){
+            for(size_t j = i+1; j < kvs.size(); j++){
+                if(kvs[j].key < kvs[i].key){
+                    KeyVal temp = kvs[i];
+                    kvs[i] = kvs[j];
+                    kvs[j] = temp;
+                }
+                   // std::swap(kvs[i], kvs[j]);
             }
         }
 
-        size_t start_idx = 0, end_idx = 0, total_idx = kvs.size();
-        while(end_idx < total_idx){
-            std::vector<std::string>values;
-            std::string key = kvs[start_idx].key;
-            while(end_idx < total_idx - 1 && kvs[end_idx] == kvs[end_idx + 1])
-                values.push_back(kvs[end_idx++].val);
-            values.push_back(kvs[end_idx].val);
-            std::string reduce_res = Reduce(key, values);
-            res_kvs.push_back(KeyVal(key, reduce_res));
-            start_idx = ++end_idx;
+        //reduce
+        std::vector<KeyVal> res;
+        size_t start_i = 0, end_i = 0;
+        while(end_i < kvs.size()){
+            std::vector<std::string> values;
+            std::string key = kvs[start_i].key;
+            while(end_i < (kvs.size() -1) && kvs[end_i].key == kvs[end_i +1].key)
+                values.push_back(kvs[end_i++].val);
+            values.push_back(kvs[end_i].val);
+            std::string reduceRes = Reduce(key, values);
+            res.push_back(KeyVal(key, reduceRes));
+            start_i = ++end_i;
         }
 
-        std::string write_content = "";
-        for(const auto &res_kv : res_kvs){
-            write_content += res_kv.key + " " + res_kv.val + "\n";
-        }
-        std::vector<chfs::u8> cont_vec;
-        for (char c : write_content) {
-            cont_vec.push_back(static_cast<uint8_t>(c));
-        }
-
-        auto lookup_res = chfs_client->lookup(1, outPutFile);
-        if(lookup_res.is_err()){
-            std::cerr<<"ERROR IN DOWORK(SAVING OUTPUT) WITH FILE "<<outPutFile<<" , ERRORNO IS "<<(int)lookup_res.unwrap_error()<<std::endl;
-        }
-        auto output_inode_id = lookup_res.unwrap();
-        auto write_res = chfs_client->write_file(output_inode_id, 0, cont_vec);
-        if(write_res.is_err()){
-            std::cerr<<"ERROR IN DOWORK(WRITING TO OUTPUT) WITH FILE "<<outPutFile<<" , ERRORNO IS "<<(int)write_res.unwrap_error()<<std::endl;
+        //store res
+        int offset = 0;
+        std::string writeContent = "";
+        for(KeyVal kv : res){
+            writeContent = kv.key + " " + kv.val + "\n";
+            std::vector<chfs::u8> charVector;
+            for(const char c : writeContent) {
+                charVector.push_back(c);
+            }
+            auto lookupRes = chfs_client->lookup(1, outPutFile);
+            if(lookupRes.is_err()){
+                std::cerr << "error in lookup " << outPutFile << " detail:" << (int)lookupRes.unwrap_error() << std::endl;
+            }
+            auto outputInodeId = lookupRes.unwrap();
+            auto writeRes = chfs_client->write_file(outputInodeId, offset, charVector);
+            if(writeRes.is_err()){
+                std::cerr << "error in write_file " << outputInodeId << " detail:" << (int)writeRes.unwrap_error() << std::endl;
+            }
+            offset += charVector.size();
         }
     }
 }
